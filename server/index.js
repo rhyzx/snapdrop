@@ -51,6 +51,10 @@ class SnapdropServer {
     }
 
     _onConnection(peer) {
+        console.log('Peer connected', {
+            ip: peer._ip,
+            id: peer.id
+        })
         this._joinRoom(peer);
         peer.socket.on('message', message => this._onMessage(peer, message));
         peer.socket.on('error', console.error);
@@ -66,10 +70,19 @@ class SnapdropServer {
         });
     }
 
-    _onHeaders(headers, response) {
-        if (response.headers.cookie && response.headers.cookie.indexOf('peerid=') > -1) return;
-        response.peerId = Peer.uuid();
-        headers.push('Set-Cookie: peerid=' + response.peerId + "; SameSite=Strict; Secure");
+    _onHeaders(headers, request) {
+        const { cookie } = request.headers
+        // TODO encrypted or signed peerId
+        // TODO cookie by index page
+        // ws cookie not showing in devtool
+        // https://stackoverflow.com/a/62595750
+        const peerid = new URLSearchParams(`${cookie}`.replace(/; ?/g, "&")).get('peerid')
+        if (peerid) {
+            request.peerId = peerid;
+        } else {
+            request.peerId = Peer.uuid();
+            headers.push('Set-Cookie: peerid=' + request.peerId + "; HttpOnly; SameSite=Strict; Max-Age=31536000");
+        }
     }
 
     _onMessage(sender, message) {
@@ -210,18 +223,17 @@ class Peer {
         } else {
             this.ip = request.connection.remoteAddress;
         }
+
+        this._ip = this.ip
         // IPv4 and IPv6 use different values to refer to localhost
         if (this.ip == '::1' || this.ip == '::ffff:127.0.0.1') {
             this.ip = '127.0.0.1';
         }
+        this.ip = "global"
     }
 
     _setPeerId(request) {
-        if (request.peerId) {
-            this.id = request.peerId;
-        } else {
-            this.id = request.headers.cookie.replace('peerid=', '');
-        }
+        this.id = request.peerId;
     }
 
     toString() {
