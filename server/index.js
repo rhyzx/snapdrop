@@ -1,4 +1,8 @@
+const http = require('http')
+const fs = require('fs')
+const { pipeline } = require('stream/promises')
 var process = require('process')
+const mime = require('mime-types')
 // Handle SIGINT
 process.on('SIGINT', () => {
   console.info("SIGINT Received, exiting...")
@@ -17,8 +21,27 @@ const { uniqueNamesGenerator, animals, colors } = require('unique-names-generato
 class SnapdropServer {
 
     constructor(port) {
+        const server = http.createServer(async (req, res) => {
+            const { pathname } = new URL(req.url, 'http://localhost')
+            try {
+                // NOTE: url.pathname is safe for `../`
+                const filename = pathname === "/" ? "/index.html" : pathname
+                const blob = await fs.openAsBlob(`${__dirname}/../client${filename}`);
+                res.setHeader('content-length', blob.size)
+                res.setHeader('content-type', mime.lookup(filename) || 'application/octet-stream')
+                res.setHeader('cache-control', 'public, max-age=31536000')
+                return await pipeline(blob.stream(), res)
+            } catch (err) {
+                console.warn(pathname, err)
+                // not found, probably?
+            }
+
+            res.statusCode = 404
+            res.end('Not found')
+        })
+        server.listen(port)
         const WebSocket = require('ws');
-        this._wss = new WebSocket.Server({ port: port });
+        this._wss = new WebSocket.Server({ server });
         this._wss.on('connection', (socket, request) => this._onConnection(new Peer(socket, request)));
         this._wss.on('headers', (headers, response) => this._onHeaders(headers, response));
 
